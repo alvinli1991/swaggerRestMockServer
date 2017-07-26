@@ -1,0 +1,37 @@
+{
+  "name": "restservergen",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "generator"
+  ],
+  "author": "Alvin Li",
+  "license": "ISC",
+  "devDependencies": {
+    "babel-cli": "^6.24.1",
+    "babel-plugin-transform-object-rest-spread": "^6.23.0",
+    "babel-preset-env": "^1.6.0",
+    "eslint": "^3.19.0",
+    "eslint-config-airbnb-base": "^11.2.0",
+    "eslint-plugin-import": "^2.7.0",
+    "expect.js": "^0.3.1",
+    "mocha": "^3.4.2",
+    "should": "^11.2.1"
+  },
+  "dependencies": {
+    "async": "^2.5.0",
+    "chance": "^1.0.10",
+    "joi": "^10.6.0",
+    "json-schema-deref-sync": "^0.3.3",
+    "json-schema-faker": "^0.5.0-rc10",
+    "json-schema-ref-parser": "^3.1.2",
+    "lodash": "^4.17.4",
+    "randexp": "^0.4.5",
+    "restify": "^5.0.1",
+    "restify-errors": "^4.3.0"
+  }
+}
