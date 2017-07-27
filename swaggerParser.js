@@ -6,6 +6,7 @@
  */
 
 const _ = require('lodash');
+const refUtil = require('./refUtil');
 
 const paramObjTpl = {
   name: '',
@@ -48,6 +49,8 @@ const APIObjTpl = {
     forms: [],
     body: {}, // 是个json schema
   },
+  consumes: [],
+  produces: [],
   responses: {},
 };
 
@@ -82,12 +85,38 @@ const paramsExceptBodyParser = function paramsParserExceptBody(param) {
 };
 
 /**
- * 从swagger全局的definitions中解析出$ref
- * @param $ref
- * @param swaggerSpec
+ * 将schema解析为去除掉$ref的模式
+ * @param schemaObj
+ * @param flatDefinitions 去掉$ref的definition
  */
-const parseRef = function parseRef($ref, swaggerSpec) {
-  return { in: 'formData', type: 'string' };
+const derefSchema = function dereferenceSchema(schemaObj, flatDefinitions) {
+  if (schemaObj == null) {
+    return null;
+  }
+  let flatSchemaObj = _.cloneDeep(schemaObj);
+  if (!_.has(flatSchemaObj, 'type')) {
+    flatSchemaObj.type = 'object';
+  }
+
+  if (flatSchemaObj.type === 'object') {
+    if (_.has(flatSchemaObj, '$ref')) {
+      const refPath = refUtil.getRefPath(flatSchemaObj.$ref);
+      if (!_.has(flatDefinitions, refPath)) {
+        throw new Error(`${refPath} doesn't exist in definitions`);
+      }
+      _.assign(flatSchemaObj, _.get(flatDefinitions, refPath));
+      flatSchemaObj = _.omit(flatSchemaObj, ['$ref']);
+    }
+  } else if (flatSchemaObj.type === 'array') {
+    if (_.has(flatSchemaObj, 'items.$ref')) {
+      const refPath = refUtil.getRefPath(flatSchemaObj.items.$ref);
+      if (!_.has(flatDefinitions, refPath)) {
+        throw new Error(`${refPath} doesn't exist in definitions`);
+      }
+      _.assign(flatSchemaObj, { items: _.get(flatDefinitions, refPath) });
+    }
+  }
+  return flatSchemaObj;
 };
 
 /**
@@ -110,56 +139,55 @@ const parseRef = function parseRef($ref, swaggerSpec) {
  * @param swaggerSpec
  * @returns {}
  */
-const operationParser = function parserHttpMethod(path, method, methodObj, swaggerSpec) {
+const operationParser = function parserHttpMethod(path, method, methodObj, flatDefinitions) {
   const apiObj = _.cloneDeep(APIObjTpl);
   apiObj.path = path;
   apiObj.method = method;
+  apiObj.consumes = _.get(methodObj, 'consumes', []);
+  apiObj.produces = _.get(methodObj, 'produces', []);
 
   // 解析请求参数
-  methodObj.parameters.forEach((param) => {
-    // 不考虑parameter中是ref的情况
-    const realParam = param;
-    const paramIn = realParam.in;
-    let paramObj = _.cloneDeep(paramObjTpl);
-    paramObj.name = realParam.name;
-    paramObj.required = _.get(realParam, 'required', false);
+  if (_.has(methodObj, 'parameters')) {
+    methodObj.parameters.forEach((param) => {
+      // 不考虑parameter中是ref的情况
+      const realParam = param;
+      const paramIn = realParam.in;
+      let paramObj = _.cloneDeep(paramObjTpl);
+      paramObj.name = realParam.name;
+      paramObj.required = _.get(realParam, 'required', false);
 
-    if (paramIn === 'body') {
-      // TODO 解析schema
-      apiObj.params.body = realParam.schema;
-    } else if (paramIn === 'header') {
-      paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-      apiObj.params.headers.push(paramObj);
-    } else if (paramIn === 'path') {
-      paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-      apiObj.params.paths.push(paramObj);
-    } else if (paramIn === 'formData') {
-      paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-      apiObj.params.forms.push(paramObj);
-    } else if (paramIn === 'query') {
-      paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-      apiObj.params.queries.push(paramObj);
-    }
-  });
+      if (paramIn === 'body') {
+        apiObj.params.body = derefSchema(realParam.schema, flatDefinitions);
+      } else if (paramIn === 'header') {
+        paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
+        apiObj.params.headers.push(paramObj);
+      } else if (paramIn === 'path') {
+        paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
+        apiObj.params.paths.push(paramObj);
+      } else if (paramIn === 'formData') {
+        paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
+        apiObj.params.forms.push(paramObj);
+      } else if (paramIn === 'query') {
+        paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
+        apiObj.params.queries.push(paramObj);
+      }
+    });
+  }
 
   // 解析响应 headers和example暂时不参考
   /**
    * {"200":{}}
    */
-  Object.keys(methodObj.responses).forEach((httpStatus) => {
-    const swaggerResp = methodObj.responses[httpStatus];
-    const respObj = _.cloneDeep(responseObjTpl);
-    respObj.statusCode = httpStatus;
-    // TODO 解析ref,schema
-    if (_.has(swaggerResp, 'schema')) {
-      respObj.schema = swaggerResp.schema;
-    } else {
-      respObj.schema = swaggerResp.$ref;
-    }
+  if (_.has(methodObj, 'responses')) {
+    Object.keys(methodObj.responses).forEach((httpStatus) => {
+      const swaggerResp = methodObj.responses[httpStatus];
+      const respObj = _.cloneDeep(responseObjTpl);
+      respObj.statusCode = httpStatus;
+      respObj.schema = derefSchema(_.get(swaggerResp, 'schema', null), flatDefinitions);
+      apiObj.responses[httpStatus] = respObj;
+    });
+  }
 
-    respObj.schema = _.get(swaggerResp, 'schema', null);
-    apiObj.responses[httpStatus] = respObj;
-  });
   return apiObj;
 };
 
@@ -183,10 +211,10 @@ const operationParser = function parserHttpMethod(path, method, methodObj, swagg
     "responses":{}
 },]
  * @param paths
- * @param definitions
+ * @param flatDefinitions 已经被去除$ref的definitions
  * @returns [{}]
  */
-const restApiParser = function parseAPIs(swaggerSpec) {
+const restApiParser = function parseAPIs(swaggerSpec, flatDefinitions) {
   const paths = swaggerSpec.paths;
   const APIs = [];
   // 解析paths item
@@ -194,7 +222,7 @@ const restApiParser = function parseAPIs(swaggerSpec) {
     const pathObj = paths[path];
     // 解析path item
     Object.keys(pathObj).forEach((method) => {
-      APIs.push(operationParser(path, method, pathObj[method], swaggerSpec));
+      APIs.push(operationParser(path, method, pathObj[method], flatDefinitions));
     });
   });
   return APIs;
