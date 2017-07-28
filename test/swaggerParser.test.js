@@ -10,3 +10,4 @@ $RefParser.dereference({ definitions: swagger.swaggerSpecJSON.definitions }).the
   .catch((err) => {
     console.error(err);
   });
+

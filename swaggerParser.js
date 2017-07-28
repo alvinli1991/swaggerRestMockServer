@@ -34,7 +34,7 @@ const paramObjTpl = {
 
 const responseObjTpl = {
   schema: null, // 是个json schema
-  headers: [],
+  headers: {},
   example: {},
 };
 
@@ -43,11 +43,11 @@ const APIObjTpl = {
   path: '',
   method: '',
   params: {
-    queries: [],
-    paths: [],
-    headers: [],
-    forms: [],
-    body: {}, // 是个json schema
+    queries: null,
+    paths: null,
+    headers: null,
+    forms: null,
+    body: null, // 是个json schema
   },
   consumes: [],
   produces: [],
@@ -78,8 +78,10 @@ const paramsExceptBodyParser = function paramsParserExceptBody(param) {
     partialParam.exclusiveMinimum = _.get(param, 'exclusiveMinimum', false);
     partialParam.maxLength = _.get(param, 'maxLength', null);
     partialParam.minLength = _.get(param, 'minLength', null);
-    partialParam.pattern = _.get(param, 'pattern', null);
     partialParam.enum = _.get(param, 'enum', null);
+  }
+  if (param.type === 'string') {
+    partialParam.pattern = _.get(param, 'pattern', null);
   }
   return partialParam;
 };
@@ -125,10 +127,10 @@ const derefSchema = function dereferenceSchema(schemaObj, flatDefinitions) {
     "path":"",
     "method":"",
     "params":{
-        "queries":[],
-        "paths":[],
-        "headers":[],
-        "forms":[],
+        "queries":{},
+        "paths":{},
+        "headers":{},
+        "forms":{},
         "body":{}
     },
     "responses":{}
@@ -152,24 +154,26 @@ const operationParser = function parserHttpMethod(path, method, methodObj, flatD
       // 不考虑parameter中是ref的情况
       const realParam = param;
       const paramIn = realParam.in;
+      const paramName = realParam.name;
       let paramObj = _.cloneDeep(paramObjTpl);
-      paramObj.name = realParam.name;
+      paramObj.name = paramName;
+
       paramObj.required = _.get(realParam, 'required', false);
 
       if (paramIn === 'body') {
         apiObj.params.body = derefSchema(realParam.schema, flatDefinitions);
       } else if (paramIn === 'header') {
         paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-        apiObj.params.headers.push(paramObj);
+        apiObj.params.headers = _.assign({}, apiObj.params.headers, { [paramName]: paramObj });
       } else if (paramIn === 'path') {
         paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-        apiObj.params.paths.push(paramObj);
+        apiObj.params.paths = _.assign({}, apiObj.params.paths, { [paramName]: paramObj });
       } else if (paramIn === 'formData') {
         paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-        apiObj.params.forms.push(paramObj);
+        apiObj.params.forms = _.assign({}, apiObj.params.forms, { [paramName]: paramObj });
       } else if (paramIn === 'query') {
         paramObj = _.assign({}, paramObj, paramsExceptBodyParser(realParam));
-        apiObj.params.queries.push(paramObj);
+        apiObj.params.queries = _.assign({}, apiObj.params.queries, { [paramName]: paramObj });
       }
     });
   }
